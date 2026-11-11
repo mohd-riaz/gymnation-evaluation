@@ -1,15 +1,15 @@
 {
   "name": "gymnation-evaluation",
-  "version": "1.0.50",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test",
+    "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts"
   },
-  "dependencies": {
-    "elysia": "latest"
-  },
-  "devDependencies": {
-    "bun-types": "latest"
-  },
-  "module": "src/index.js"
+  "dependencies": { "elysia": "1.4.32" },
+  "devDependencies": { "bun-types": "1.4.4", "typescript": "5.9.3" }
 }
