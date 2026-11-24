@@ -9,6 +9,9 @@ export type Currency = (typeof countries)[Country]["currency"];
 export interface Member { id: string; name: string; country: Country; phone: string }
 export interface Plan { id: string; country: Country; currency: Currency; monthly: number; joining_fee: number }
 export interface Agreement { id: string; member_id: string; plan_id: string; start_date: string; due_day: number }
+export interface FreezeChange { id: string; type: "FREEZE"; from: string; to: string }
+export interface PlanChange { id: string; type: "PLAN"; plan_id: string; on: string }
+export type AgreementChange = FreezeChange | PlanChange;
 export interface Invoice {
   invoice_no: number;
   due_date: string;
@@ -44,6 +47,9 @@ export function createStore() {
     plans: new Map<string, Plan>(),
     agreements: new Map<string, Agreement>(),
     runs: new Map<string, Run>(),
+    changes: new Map<string, Map<string, AgreementChange>>(),
+    closedInvoices: new Map<string, Map<number, Invoice>>(),
+    closedThrough: "",
   };
 }
 export type Store = ReturnType<typeof createStore>;

@@ -1,6 +1,6 @@
 # AI conversation record
 
-Date: 2026-11-11. Assistant: Codex. This file pastes the user's assignment and implementation request, followed by the assistant's visible progress messages. Tool activity is summarized separately; this is not a raw tool-log export. No additional user prompts or other AI agents were used.
+Initial session: 2026-11-11. Live extension: 2026-11-24. Assistant: Codex. This file pastes the user's assignment and implementation request, followed by visible progress messages. Tool activity is summarized separately; this is not a raw tool-log export. No other AI agents were used.
 
 ## User: assignment attachment (verbatim)
 
@@ -190,3 +190,48 @@ I want you to work on it. Use ElysiaJs with bun. Use `bun create elysia .` to cr
 - Verified the production image again with `--network none`; all HTTP workflows passed while running as the unprivileged `bun` user.
 - Rebuilt the final Docker test stage after strengthening the earliest-candidate test. All 106 tests passed. Docker encountered a local snapshot error exporting the tagged test image; rerunning the exact `docker build --target test .` command succeeded without source changes.
 - Stopped the temporary verification containers. All implementation files remain in the main branch's working tree; no remote push was performed.
+
+## Live extension — 2026-11-24
+
+### User request (verbatim, sent with each pair of photographs)
+
+im at the interview now. i'm given a new task that builds on the previous work. let me know if you have any questions or need clarification.
+
+### Attached task (summary)
+
+Extend the existing API with agreement freezes, plan changes, and globally closed months. Record changes through POST /agreements/:id/changes with strict error precedence and idempotency. Apply freezes chronologically, move a due date by the inclusive freeze duration, and use its landing day as the new monthly anchor. The first freeze each calendar year is free; later freezes add the specified country fee. Resolve plan changes against the plan in force the previous day, delay downgrades by at least seven days to a due date, and prorate upgrade differences without frozen days. Preserve closed invoice snapshots; apply the difference between revised closed charges and actual closed charges to open invoices, carrying credits forward without negative nets. Reconciliation uses adjusted invoices and excludes zero totals. The handout requests the live branch and provides six worked examples.
+
+### Visible conversation (verbatim)
+
+Assistant: I’ll start extending the API and add tests for the worked examples. The photos show the “2. Freeze” heading but no rules beneath it; I’ll need that missing section to implement freeze behavior accurately.
+
+Assistant question: Please paste the missing “2. Freeze” rules—the photo shows only the heading. Also, if you have sample-checks.mjs, what is its local file path?
+
+Assistant: The repository is already on `live`. I’m implementing change validation, plan-price history, and month-close snapshots first. Closed invoices will stay unchanged; any backdated pricing difference will be applied to open invoices, with credits carried forward when a net reaches zero.
+
+User supplied replacement photographs containing the full freeze section and repeated the request above.
+
+Assistant: The new photo includes the freeze rules, so that clarification is resolved. I’ll apply freezes in date order, move the affected due date and reset its monthly anchor, then add the annual freeze fee to the moved invoice. I’ll check the combined behavior against all six examples.
+
+Assistant: All six worked examples pass, along with 33 additional extension tests. The original 106 tests also still pass. I’m checking the remaining interactions—especially repeated month closes, concurrent requests, and reconciliation after credits—before verifying Docker.
+
+Assistant: The extension now has 45 passing tests, including real HTTP races for overlapping freezes and month closure. Docker was stopped, so I’ve started it in the background for container checks. I also couldn’t find `sample-checks.mjs` in the repository or Downloads; our tests cover all six printed examples.
+
+Assistant: All 151 tests pass. The production Docker image also passes all six printed examples, both through port 8080 and with networking disabled. I’m finishing the notes; `sample-checks.mjs` is the only check I haven’t run because that file hasn’t been provided.
+
+Assistant question: The implementation and checks are complete. The handout calls for pushing the live branch; should I commit and push these changes to origin/live?
+
+User: Leave changes for review
+
+Assistant: I’ll leave the changes uncommitted on `live` for your review.
+
+### Implementation and verification summary
+
+- Added src/changes.ts for ordered validation, idempotency, and atomic conflict checks.
+- Added src/billing.ts for deterministic date-ordered freeze application, plan history, closed snapshots, and correction carry-forward.
+- Added typed change storage and the global closure watermark; retained existing response shapes.
+- Wired the new routes and updated existing invoice/reconciliation endpoints to share the same billing calculation.
+- Added tests/live.test.ts (45 tests) and tests/live-smoke.ts (all six printed examples against an empty running server).
+- Passed TypeScript checking and all 151 original/extension tests locally and in Docker.
+- Built the production image and passed all six examples over HTTP and with runtime networking disabled.
+- No commit or push was performed, following the user's explicit review preference.

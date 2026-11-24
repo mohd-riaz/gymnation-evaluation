@@ -6,7 +6,7 @@ export function roundHalfUp(numerator: bigint, denominator: bigint): bigint {
   return (2n * numerator + denominator) / (2n * denominator);
 }
 
-function amounts(net: bigint, plan: Plan) {
+export function amounts(net: bigint, plan: Plan) {
   const vat = roundHalfUp(net * BigInt(countries[plan.country].vat), 100n);
   const total = net + vat;
   if (total > BigInt(Number.MAX_SAFE_INTEGER)) invalid("Invoice amounts must fit safe integer minor units.");

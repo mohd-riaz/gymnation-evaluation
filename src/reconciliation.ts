@@ -1,6 +1,6 @@
 import { monthRange, parseDate } from "./dates";
 import { ApiError } from "./errors";
-import { invoicesFor } from "./invoices";
+import { agreementInvoices } from "./billing";
 import { type ExpectedInvoice, type GatewayRow, type Run, type Store, type Verdict } from "./models";
 
 export function reconcile(store: Store, month: string, rows: GatewayRow[]): Run {
@@ -23,7 +23,7 @@ export function reconcile(store: Store, month: string, rows: GatewayRow[]): Run 
   const expected: ExpectedInvoice[] = [];
   const byAgreement = new Map<string, ExpectedInvoice[]>();
   for (const agreement of store.agreements.values()) {
-    const invoices = invoicesFor(agreement, store.plans.get(agreement.plan_id)!, from, to).map((invoice) => ({
+    const invoices = agreementInvoices(store, agreement, from, to).filter((invoice) => invoice.total > 0).map((invoice) => ({
       agreement_id: agreement.id, invoice_no: invoice.invoice_no, due_date: invoice.due_date,
       total: invoice.total, currency: invoice.currency,
     }));

@@ -25,10 +25,24 @@ docker build --target test .
 | POST | `/plans` | Create a country-specific plan |
 | POST | `/agreements` | Link a member to a plan |
 | GET | `/agreements/:id/invoices?from=YYYY-MM-DD&to=YYYY-MM-DD` | Compute an inclusive invoice schedule |
+| POST | `/agreements/:id/changes` | Record an idempotent freeze or plan change |
+| POST | `/months/close` | Lock a month and every earlier month globally |
 | POST | `/reconciliation/runs` | Reconcile a month's gateway rows |
 | GET | `/reconciliation/runs/:id` | Retrieve an unchanged run snapshot |
 
 Send request bodies as `application/json`. Money is an integer in minor units. Errors have the form `{"error":{"code":"...","message":"..."}}`.
+
+The live extension keeps invoice numbers stable while freezes move due dates and reset the monthly anchor. Plan changes affect prices and prorated upgrades; closed invoices remain fixed, with any backdated correction applied to open invoices. Reconciliation uses these adjusted invoices and excludes zero totals.
+
+```json
+{ "id": "freeze-1", "type": "FREEZE", "from": "2027-04-15", "to": "2027-04-28" }
+```
+
+```json
+{ "id": "change-1", "type": "PLAN", "plan_id": "plus-ae", "on": "2027-04-05" }
+```
+
+Post either body to `/agreements/:id/changes`. Replaying an identical change returns 200; a new change returns 201. Post `{ "month": "2027-03" }` to `/months/close` to close March and all earlier months.
 
 ## Example
 

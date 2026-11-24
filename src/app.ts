@@ -1,10 +1,12 @@
 import { Elysia, t } from "elysia";
 import { parseDate } from "./dates";
 import { ApiError, invalid } from "./errors";
-import { invoicesFor, validatePlanAmounts } from "./invoices";
+import { validatePlanAmounts } from "./invoices";
 import { countries, createStore, type Plan } from "./models";
 import { normalizePhone } from "./phones";
 import { reconcile } from "./reconciliation";
+import { agreementById, recordChange } from "./changes";
+import { agreementInvoices, closeMonth } from "./billing";
 
 const country = t.Union([t.Literal("AE"), t.Literal("SA"), t.Literal("BH")]);
 const currency = t.Union([t.Literal("AED"), t.Literal("SAR"), t.Literal("BHD")]);
@@ -14,6 +16,11 @@ const date = t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" });
 const integer = (minimum: number, maximum: number) => t.Number({ minimum, maximum, multipleOf: 1 });
 const money = (minimum: number) => integer(minimum, Number.MAX_SAFE_INTEGER);
 const params = t.Object({ id });
+const month = t.String({ pattern: "^\\d{4}-(0[1-9]|1[0-2])$" });
+const changeBody = t.Union([
+  t.Object({ id, type: t.Literal("FREEZE"), from: date, to: date }, { additionalProperties: false }),
+  t.Object({ id, type: t.Literal("PLAN"), plan_id: id, on: date }, { additionalProperties: false }),
+]);
 
 export function createApp() {
   const store = createStore();
@@ -34,6 +41,17 @@ export function createApp() {
       console.error(error);
       set.status = 500;
       return { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } };
+    })
+    .onRequest(({ request }) => {
+      // Unknown agreement takes precedence over even malformed JSON for changes.
+      if (request.method !== "POST") return;
+      const match = /^\/agreements\/([^/]+)\/changes\/?$/.exec(new URL(request.url).pathname);
+      if (match) {
+        let agreementId: string;
+        try { agreementId = decodeURIComponent(match[1]); }
+        catch { return invalid("Agreement id has invalid URL encoding."); }
+        agreementById(store, agreementId);
+      }
     })
     .get("/health", () => ({ status: "ok" }))
     .post("/members", ({ body, set }) => {
@@ -70,6 +88,7 @@ export function createApp() {
       if (!member) throw new ApiError(422, "UNKNOWN_MEMBER", "Member does not exist.");
       if (!plan) throw new ApiError(422, "UNKNOWN_PLAN", "Plan does not exist.");
       if (member.country !== plan.country) throw new ApiError(422, "PLAN_COUNTRY_MISMATCH", "Plan and member countries must match.");
+      if (body.start_date.slice(0, 7) <= store.closedThrough) throw new ApiError(409, "MONTH_CLOSED", "Agreement starts in a closed month.");
       const agreement = { id: crypto.randomUUID(), ...body };
       store.agreements.set(agreement.id, agreement);
       set.status = 201;
@@ -78,8 +97,16 @@ export function createApp() {
     .get("/agreements/:id/invoices", ({ params, query }) => {
       const agreement = store.agreements.get(params.id);
       if (!agreement) throw new ApiError(404, "NOT_FOUND", "Agreement not found.");
-      return invoicesFor(agreement, store.plans.get(agreement.plan_id)!, query.from, query.to);
+      return agreementInvoices(store, agreement, query.from, query.to);
     }, { params, query: t.Object({ from: date, to: date }) })
+    .post("/agreements/:id/changes", ({ params, body, set }) => {
+      set.status = recordChange(store, agreementById(store, params.id), body);
+      return body;
+    }, { params, body: changeBody })
+    .post("/months/close", ({ body }) => {
+      closeMonth(store, body.month);
+      return body;
+    }, { body: t.Object({ month }) })
     .post("/reconciliation/runs", ({ body, set }) => {
       const run = reconcile(store, body.month, body.rows);
       store.runs.set(run.id, run);

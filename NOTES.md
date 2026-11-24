@@ -37,13 +37,31 @@ Verified on 2026-11-11: TypeScript checking and all 106 tests passed; `docker bu
 - `src/phones.ts`: canonical E.164 normalization and country-specific rules.
 - `src/dates.ts`: validated calendar dates, UTC epoch-day arithmetic, and month anchors.
 - `src/invoices.ts`: pure schedule generation and exact `bigint` arithmetic before JSON-number conversion.
+- `src/changes.ts`: change validation in the required order, idempotency, and conflict prevention.
+- `src/billing.ts`: chronological freezes, effective plan history, immutable closed invoices, and correction carry-forward.
 - `src/reconciliation.ts`: whole-request row validation, independent candidate selection, link counting, and unmatched sorting.
 - `src/models.ts`: domain types, country settings, and per-process in-memory maps.
 - `src/index.ts`: production listener and graceful shutdown.
 
 Phone and plan uniqueness checks and writes happen synchronously without an intervening `await`. A single Bun process therefore cannot interleave two writes inside these critical sections. Reconciliation also takes a synchronous snapshot. Do not add multiple workers or replicas sharing these in-memory stores; that would require a transactional shared database with uniqueness constraints.
 
-Invoice calculation jumps to the requested month and retains the original due-day anchor. Monetary calculations never use major units or floating-point rounding. Reconciliation chooses candidates before counting their links so request order does not determine the winner. Stored runs remain unchanged when new agreements are created.
+Unchanged agreements retain the original direct month lookup. Changed agreements replay their schedule from the start so fees, invoice numbers, and credits do not depend on the requested date window. Monetary calculations never use major units or floating-point rounding. Reconciliation chooses candidates before counting their links so request order does not determine the winner. Stored runs remain unchanged when new agreements or changes are created.
+
+## Live extension (2026-11-24)
+
+`POST /agreements/:id/changes` accepts the FREEZE and PLAN bodies from the interview specification. Change IDs are scoped to an agreement, and exact retries (independent of JSON property order) return 200. Unknown agreement checks run before body parsing, as required. Calendar validation precedes idempotency; the remaining business checks follow the specified error order.
+
+Freezes are sorted by `from` and applied to the schedule left by earlier freezes. The moved invoice keeps its number and accumulates any freeze fee. Its landing day becomes the monthly anchor for later invoices. The first freeze per agreement per calendar year is free; further freezes cost 2500 AED/SAR minor units or 2000 BHD minor units, before VAT. Invoice 1's original proration remains unchanged.
+
+Plan changes are sorted by `on`. Each compares its new price with the effective plan on the preceding day; pending downgrades are excluded. Same-price changes and upgrades take effect immediately, while downgrades wait for a due date at least seven days later. Each upgrade's catch-up charge independently rounds its old and new prorations, excluding frozen days. Joining fees never recur.
+
+`POST /months/close` snapshots every invoice through the given month and advances one global closure watermark. Existing snapshots are preserved. Future calculations subtract actual closed net charges (including past corrections) from the closed net charges that the current change history would require before corrections. That balance goes onto the earliest open invoice, with negative overflow carried forward. Merely reading invoices does not consume credit. VAT is recalculated on adjusted nonnegative net amounts. Reconciliation omits zero-total invoices.
+
+All change validations/writes and month-close snapshots/commits are synchronous in the single Bun process. The closure operation stages all snapshots before committing them. Tests include real HTTP races for overlapping freezes and closing a month while recording a freeze.
+
+The six printed examples and additional extension edge cases are in `tests/live.test.ts`. Run `bun run check` for both the original and extension suites. To replay the six examples against an **empty disposable server**, run `bun run tests/live-smoke.ts http://localhost:8080`; this writes records and closes March globally. The interviewer's `sample-checks.mjs` was not present in the repository or Downloads when checked; the printed examples are covered by our own tests.
+
+Verified on 2026-11-24: all 151 tests (106 original plus 45 extension tests) and TypeScript checks passed. Both Docker stages built successfully. All six examples passed against the production container through port 8080 and again with `--network none`. Verification containers were stopped. Changes remain uncommitted on `live` for review, as requested.
 
 ## Assumptions
 
@@ -53,7 +71,7 @@ Invoice calculation jumps to the requested month and retains the original due-da
 - Plan IDs, transaction IDs, and reference IDs must be nonempty strings; their characters and lengths are otherwise unrestricted.
 - Unexpected object fields are rejected as malformed input rather than silently discarded.
 - Phone cleanup removes ASCII spaces, hyphens, and round brackets; tabs, letters, non-ASCII digits, and other punctuation are invalid.
-- When both a malformed field and a business error exist, schema/calendar validation takes precedence; for a valid invoice query, an unknown agreement ID returns `404 NOT_FOUND`.
+- Original routes retain schema/calendar error precedence; the change endpoint explicitly checks unknown agreement first, including before malformed JSON.
 - When both agreement references are unknown, `UNKNOWN_MEMBER` takes precedence over `UNKNOWN_PLAN`.
 - Gateway transaction IDs are unique within a run only; the same file may be reconciled in a new independent run.
 - Reconciliation's three row-rule errors are accumulated after structural and calendar validation succeeds; each duplicate row contributes its own `DUPLICATE_TXN` entry.
